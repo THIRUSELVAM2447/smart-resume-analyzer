@@ -1,23 +1,30 @@
 # backend/app/api/resume.py
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.dependencies import get_current_user
 from app.database.connection import get_db
 from app.models.resume import Resume, ResumeVersion
 from app.models.user import User
 from app.schemas.resume import (
-    ResumeBase,
     ResumeDetailResponse,
     ResumeResponse,
     ResumeVersionResponse,
 )
-from app.services.resume_service import ResumeService
+from app.services.resume_service import (
+    ResumeFileNotFoundError,
+    ResumeProcessingError,
+    ResumeService,
+)
 
 router = APIRouter(prefix="/api/resumes", tags=["Resumes"])
 
 resume_service = ResumeService()
+
+ALLOWED_CONTENT_TYPES = {"application/pdf"}
+UPLOAD_CHUNK_SIZE = 1024 * 1024  # 1 MB
 
 
 @router.get("", response_model=list[ResumeResponse])
@@ -84,18 +91,98 @@ def get_resume_version(
     response_model=ResumeResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def create_resume(
-    resume_data: ResumeBase,
+async def create_resume(
+    file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Resume:
     """
-    Create resume metadata for the authenticated user.
+    Upload a PDF resume for the authenticated user.
 
-    Does not handle file upload/storage or parsing yet — those are
-    implemented in a later step.
+    Validates the file is a PDF, reads its contents, and delegates
+    storage plus Resume record creation to
+    ResumeService.create_resume_with_file(). No parsing happens here —
+    that remains a separate step via POST /{resume_id}/process.
     """
-    return resume_service.create_resume(db, current_user, resume_data)
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only PDF files are allowed.",
+        )
+
+    if file.content_type not in ALLOWED_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only PDF files are allowed.",
+        )
+
+    max_size_bytes = settings.MAX_RESUME_SIZE_MB * 1024 * 1024
+    content = bytearray()
+
+    while True:
+        chunk = await file.read(UPLOAD_CHUNK_SIZE)
+        if not chunk:
+            break
+        content.extend(chunk)
+        if len(content) > max_size_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=(
+                    f"Resume file exceeds the maximum allowed size of "
+                    f"{settings.MAX_RESUME_SIZE_MB}MB."
+                ),
+            )
+
+    if len(content) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded file is empty.",
+        )
+
+    return resume_service.create_resume_with_file(
+        db=db,
+        user=current_user,
+        original_filename=file.filename or "resume.pdf",
+        file_content=bytes(content),
+    )
+
+
+@router.post(
+    "/{resume_id}/process",
+    response_model=ResumeVersionResponse,
+)
+def process_resume(
+    resume_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ResumeVersion:
+    """
+    Extract text from a resume's stored PDF and create a new
+    ResumeVersion containing it.
+
+    Returns 404 when the resume doesn't exist or belongs to another
+    user. Returns 404 when the stored file is missing, and 422 when
+    the PDF cannot be processed or contains no extractable text.
+    """
+    try:
+        version = resume_service.process_resume(db, current_user, resume_id)
+    except ResumeFileNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Resume file not found.",
+        )
+    except ResumeProcessingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        )
+
+    if version is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Resume not found.",
+        )
+    return version
 
 
 @router.patch("/{resume_id}/deactivate", response_model=ResumeResponse)

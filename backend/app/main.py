@@ -1,11 +1,12 @@
-# backend/app/main.py
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.auth import router as auth_router
+from app.api.job import router as job_router
+from app.api.job_analysis import router as job_analysis_router
 from app.api.resume import router as resume_router
 from app.core.config import settings
+
 
 app = FastAPI(
     title="ResumeIQ API",
@@ -17,9 +18,11 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Allow the future React frontend (local dev) to call this API.
-# Origins come from application settings, not hard-coded here, so
-# there is a single source of truth for allowed origins.
+
+# ---------------------------------------------------------------------------
+# CORS
+# ---------------------------------------------------------------------------
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
@@ -28,20 +31,46 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# ---------------------------------------------------------------------------
+# API ROUTERS
+# ---------------------------------------------------------------------------
+
+# Authentication
 app.include_router(auth_router)
+
+# Resume upload, processing, versions and management
 app.include_router(resume_router)
 
+# Job posting creation, listing and management
+app.include_router(job_router)
+
+# ATS job analysis
+app.include_router(job_analysis_router)
+
+
+# ---------------------------------------------------------------------------
+# ROOT ENDPOINT
+# ---------------------------------------------------------------------------
 
 @app.get("/")
 def read_root() -> dict:
     """Root health/status endpoint."""
+
     return {
         "message": "ResumeIQ API is running",
         "status": "ok",
     }
 
 
+# ---------------------------------------------------------------------------
+# HEALTH ENDPOINT
+# ---------------------------------------------------------------------------
+
 @app.get("/health")
 def health_check() -> dict:
     """Basic health check endpoint."""
-    return {"status": "healthy"}
+
+    return {
+        "status": "healthy",
+    }
