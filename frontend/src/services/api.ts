@@ -28,6 +28,32 @@ interface RequestOptions {
   headers?: Record<string, string>
 }
 
+function getBackendMessage(body: unknown, fallback: string): string {
+  if (!body || typeof body !== 'object' || !('detail' in body)) {
+    return fallback
+  }
+
+  const detail = (body as { detail: unknown }).detail
+
+  if (typeof detail === 'string') {
+    return detail
+  }
+
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item) =>
+        item && typeof item === 'object' && 'msg' in item
+          ? String((item as { msg: unknown }).msg)
+          : null
+      )
+      .filter((message): message is string => Boolean(message))
+
+    return messages.join(' ') || fallback
+  }
+
+  return fallback
+}
+
 async function request<TResponse>(
   method: HttpMethod,
   path: string,
@@ -36,11 +62,15 @@ async function request<TResponse>(
   const { body, headers = {} } = options
 
   const finalHeaders: Record<string, string> = { ...headers }
-  let requestBody: string | undefined
+  let requestBody: BodyInit | undefined
 
   if (body !== undefined) {
-    finalHeaders['Content-Type'] = 'application/json'
-    requestBody = JSON.stringify(body)
+    if (body instanceof FormData) {
+      requestBody = body
+    } else {
+      finalHeaders['Content-Type'] = 'application/json'
+      requestBody = JSON.stringify(body)
+    }
   }
 
   // Automatically attach the stored JWT, unless the caller already
@@ -79,17 +109,10 @@ async function request<TResponse>(
   }
 
   if (!response.ok) {
-    const backendMessage =
-      parsedBody &&
-      typeof parsedBody === 'object' &&
-      'detail' in parsedBody
-        ? String((parsedBody as { detail: unknown }).detail)
-        : undefined
-
     const apiError: ApiError = {
       status: response.status,
       statusText: response.statusText,
-      message: backendMessage ?? response.statusText,
+      message: getBackendMessage(parsedBody, response.statusText),
     }
 
     throw apiError

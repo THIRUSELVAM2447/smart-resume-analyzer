@@ -19,9 +19,12 @@ export const resumeService = {
     )
   },
 
-  createResume: (originalFilename: string): Promise<Resume> => {
-    return api.post<Resume>('/api/resumes', {
-      original_filename: originalFilename,
-    })
+  uploadResume: (file: File): Promise<Resume> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post<Resume>('/api/resumes', formData)
   },
+
+  processResume: (resumeId: number): Promise<ResumeVersion> =>
+    api.post<ResumeVersion>(`/api/resumes/${resumeId}/process`),
 }

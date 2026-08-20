@@ -1,8 +1,9 @@
-import { useNavigate } from 'react-router-dom'
-import '../App.css'
+import { Link, useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 
 export default function Landing() {
   const navigate = useNavigate()
+  const { isAuthenticated, isLoading } = useAuth()
 
   return (
     <>
@@ -11,15 +12,29 @@ export default function Landing() {
           <span className="brand">ResumeIQ</span>
           <nav className="main-nav" aria-label="Primary navigation">
             <ul>
-              <li>Dashboard</li>
-              <li>Resumes</li>
-              <li>Jobs</li>
-              <li>Portfolio</li>
+              <li>
+                <Link to={isAuthenticated ? '/dashboard' : '/login'}>Dashboard</Link>
+              </li>
+              <li>
+                <Link to={isAuthenticated ? '/dashboard' : '/login'}>Resumes</Link>
+              </li>
+              <li>
+                <Link to={isAuthenticated ? '/dashboard' : '/login'}>Jobs</Link>
+              </li>
+              <li>
+                <Link to={isAuthenticated ? '/portfolio' : '/login'}>Portfolio</Link>
+              </li>
             </ul>
           </nav>
-          <div className="profile-placeholder" aria-hidden="true">
-            <span>P</span>
-          </div>
+          {isAuthenticated ? (
+            <button type="button" className="text-button" onClick={() => navigate('/dashboard')}>
+              Open workspace
+            </button>
+          ) : (
+            <button type="button" className="text-button" onClick={() => navigate('/login')}>
+              Log in
+            </button>
+          )}
         </div>
       </header>
 
@@ -35,9 +50,10 @@ export default function Landing() {
             <button
               type="button"
               className="btn-primary"
-              onClick={() => navigate('/register')}
+              disabled={isLoading}
+              onClick={() => navigate(isAuthenticated ? '/dashboard' : '/register')}
             >
-              Get Started
+              {isAuthenticated ? 'Go to dashboard' : 'Get Started'}
             </button>
           </div>
         </section>

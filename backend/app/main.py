@@ -5,6 +5,7 @@ from app.api.auth import router as auth_router
 from app.api.job import router as job_router
 from app.api.job_analysis import router as job_analysis_router
 from app.api.resume import router as resume_router
+from app.api.portfolio import router as portfolio_router
 from app.core.config import settings
 
 
@@ -47,6 +48,9 @@ app.include_router(job_router)
 
 # ATS job analysis
 app.include_router(job_analysis_router)
+
+# Resume-derived professional portfolio
+app.include_router(portfolio_router)
 
 
 # ---------------------------------------------------------------------------
